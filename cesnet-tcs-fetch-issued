@@ -1,0 +1,99 @@
+#!/bin/sh
+#---help---
+# USAGE:
+#   cesnet-tcs-fetch-issued [-h | -V]
+#
+# Checks all pending certificate requests in $spool_dir and fetches all that
+# are already issued.  Afterwards runs $post_fetch_script with domain names of
+# the fetched certificates as arguments, if there are some.  This script is
+# supposed to be run periodically by cron.
+#
+# OPTIONS:
+#   -V --version  Print the script version and exit.
+#   -h --help     Show this message and exit.
+#
+# EXIT CODES:
+#   1              Generic error.
+#   3              cesnet-tcs error.
+#   4              post-fetch script error.
+#
+# Please report bugs at <https://github.com/jirutka/cesnet-tcs-cli/issues>.
+#---help---
+set -eu
+
+if ( set -o pipefail 2>/dev/null ); then
+	set -o pipefail
+else
+	echo "ERROR: Your shell does not support pipefail!" >&2
+	exit 1
+fi
+
+readonly PROGNAME='cesnet-tcs-fetch-issued'
+readonly VERSION='0.0.0'
+
+# Configuration variables that may be overwritten by the config file.
+logger_facility='cron'
+post_fetch_script='/etc/cesnet-tcs/post-fetch.sh'
+spool_dir='/var/spool/cesnet-tcs'
+
+
+help() {
+	sed -En '/^#---help---/,/^#---help---/p' "$0" | sed -E 's/^# ?//; 1d;$d;'
+}
+
+log() {
+	if [ $# -eq 2 ]; then
+		logger -s -t "$PROGNAME" -p "$logger_facility.$1" "$2"
+	else
+		logger -s -t "$PROGNAME" -p "$logger_facility.$1"
+	fi
+}
+
+
+case "${1:-}" in
+	-V | --version) echo "$PROGNAME $VERSION"; exit 0;;
+	-h | --help) help; exit 0;;
+esac
+
+. ${CESNET_TCS_CONFIG:="/etc/cesnet-tcs/cesnet-tcs.conf"} || {
+	log err "$CESNET_TCS_CONFIG does not exist or not readable!"
+	exit 1
+}
+
+result=0
+updated=''
+
+for file in $(find "$spool_dir" -type f); do
+	id=$(basename "$file")
+	domain=$(cat "$file")
+
+	state=$({
+		{	set +e
+			cesnet-tcs fetch --silent "$id" "$domain"
+			echo $? >&3
+		} 2>&1 | log err
+	} 3>&1)
+
+	case "$state" in
+		0)
+			log info "Fetched certificate #$id for $domain"
+			rm "$file"
+			updated="$updated $domain"
+		;;
+		100 | 101)
+			log debug "Certificate #$id for $domain hasn't been issued yet"
+		;;
+		*)
+			result=2
+		;;
+	esac
+done
+
+if [ "$updated" ] && [ -x "$post_fetch_script" ]; then
+	{ "$post_fetch_script" $updated 2>&3 | log info; } 3>&1 1>&2 | log err || {
+		log err 'post-fetch script failed'
+		result=3
+	}
+fi
+
+exit $result

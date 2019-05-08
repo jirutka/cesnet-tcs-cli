@@ -26,6 +26,7 @@ NOTE: The project’s link:Makefile[] supports standard GNU variables such as `D
 git clone -b v{version} https://github.com/{gh-name}.git
 cd {name}
 make install
+make install-cron
 ----
 
 
@@ -37,6 +38,7 @@ wget https://github.com/{gh-name}/archive/v{version}/{name}-{version}.tar.gz
 tar -xzf {name}-{version}.tar.gz
 cd {name}-{version}
 make install
+make install-cron
 ----
 
 

@@ -11,6 +11,7 @@ sysconfdir    := /etc
 
 CERTS_DIR     := $(sysconfdir)/ssl/cesnet
 CONF_DIR      := $(sysconfdir)/$(PROGNAME)
+HOURLY_DIR    := $(sysconfdir)/periodic/hourly
 SPOOL_DIR     := $(spooldir)/$(PROGNAME)
 
 INSTALL       := install
@@ -26,24 +27,38 @@ help:
 	@$(SED) -En '/^#:.*/{ N; s/^#: (.*)\n([A-Za-z0-9_-]+).*/\2 \1/p }' $(MAKEFILE_LIST) \
 		| while read label desc; do printf '%-20s %s\n' "$$label" "$$desc"; done
 
-#: Install the script, configuration file and prepare the spool directory.
-install: $(D)/$(PROGNAME) $(D)/$(CONFNAME)
+#: Install the scripts, configuration file and prepare the spool directory.
+install: $(D)/$(PROGNAME) $(D)/$(CONFNAME) $(D)/cesnet-tcs-fetch-issued
 	$(INSTALL) -m 755 -D $(D)/$(PROGNAME) "$(DESTDIR)$(bindir)/$(PROGNAME)"
+	$(INSTALL) -m 755 -D $(D)/cesnet-tcs-fetch-issued "$(DESTDIR)$(bindir)/cesnet-tcs-fetch-issued"
 	$(INSTALL) -m 644 -D $(D)/$(CONFNAME) "$(DESTDIR)$(CONF_DIR)/$(CONFNAME)"
+	$(INSTALL) -m 755 -D post-fetch.sh "$(DESTDIR)$(CONF_DIR)/post-fetch.sh"
 	$(INSTALL) -d "$(DESTDIR)$(SPOOL_DIR)"
 	$(INSTALL) -d "$(DESTDIR)$(CERTS_DIR)"
 
-#: Remove the script, configuration file and the spool directory.
-uninstall:
+#: Create symlinks for cron scripts.
+install-cron:
+	$(INSTALL) -d "$(DESTDIR)$(HOURLY_DIR)"
+	ln -s $(bindir)/cesnet-tcs-fetch-issued "$(DESTDIR)$(HOURLY_DIR)/cesnet-tcs-fetch-issued"
+
+#: Remove the scripts, configuration file and the spool directory.
+uninstall: uninstall-cron
 	rm -f "$(DESTDIR)$(bindir)/$(PROGNAME)"
+	rm -f "$(DESTDIR)$(bindir)/cesnet-tcs-fetch-issued"
 	rm -f "$(DESTDIR)$(CONF_DIR)/$(CONFNAME)"
+	rm -f "$(DESTDIR)$(CONF_DIR)/post-fetch.sh"
 	rm -f "$(DESTDIR)$(SPOOL_DIR)"/*
 	rmdir "$(DESTDIR)$(SPOOL_DIR)"
+
+#: Remove symlinks for cron scripts.
+uninstall-cron:
+	rm -f "$(DESTDIR)$(HOURLY_DIR)/cesnet-tcs-fetch-issued"
 
 #: Update version in the script and README.adoc to $VERSION.
 bump-version:
 	test -n "$(VERSION)"  # $$VERSION
-	$(SED) -E -i "s/^(readonly VERSION)=.*/\1='$(VERSION)'/" $(PROGNAME)
+	$(SED) -E -i "s/^(readonly VERSION)=.*/\1='$(VERSION)'/" \
+		$(PROGNAME) cesnet-tcs-fetch-issued
 	$(SED) -E -i "s/^(:version:).*/\1 $(VERSION)/" README.adoc
 
 #: Bump version to $VERSION, create release commit and tag.
@@ -58,9 +73,9 @@ release: .check-git-clean | bump-version
 $(D)/%: % | $(D)
 	@$(SED) \
 		-e 's|^#!/bin/sh|#!$(SCRIPT_SHELL)|' \
-		-e 's|/etc/cesnet-tcs/cesnet-tcs\.conf|$(CONF_DIR)/$(CONFNAME)|g' \
-		-e 's|/var/spool/cesnet-tcs|$(SPOOL_DIR)|g' \
+		-e 's|/etc/cesnet-tcs/|$(CONF_DIR)/|g' \
 		-e 's|/etc/ssl/cesnet|$(CERTS_DIR)|g' \
+		-e 's|/var/spool/cesnet-tcs|$(SPOOL_DIR)|g' \
 		$< > $@
 
 $(D):
@@ -70,4 +85,4 @@ $(D):
 	@test -z "$(shell $(GIT) status --porcelain)" \
 		|| { echo 'You have uncommitted changes!' >&2; exit 1; }
 
-.PHONY: help install uninstall bump-version release .check-git-clean
+.PHONY: help install install-cron uninstall uninstall-cron bump-version release .check-git-clean
