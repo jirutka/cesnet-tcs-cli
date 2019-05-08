@@ -131,9 +131,7 @@ die() {
 	local status="$1"
 	local msg="$2"
 
-	if [ "$silent" = no ] || [ "$status" -lt 100 ]; then
-		printf '%s: %s\n' "$PROGNAME" "$msg" >&2
-	fi
+	printf '%s: %s\n' "$PROGNAME" "$msg" >&2
 	exit $status
 }
 
@@ -270,10 +268,12 @@ fetch() {
 			fi
 		;;
 		added)
-			die 100 "$id is waiting for approval"
+			[ "$silent" = yes ] || echo "$id is waiting for approval"
+			exit 100
 		;;
 		accepted)
-			die 101 "$id has been accepted, but not issued yet"
+			[ "$silent" = yes ] || echo "$id has been accepted, but not issued yet"
+			exit 101
 		;;
 		refused)
 			die 6 "$id has been refused"
