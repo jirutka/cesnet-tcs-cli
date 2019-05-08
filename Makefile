@@ -11,6 +11,7 @@ sysconfdir    := /etc
 
 CERTS_DIR     := $(sysconfdir)/ssl/cesnet
 CONF_DIR      := $(sysconfdir)/$(PROGNAME)
+DAILY_DIR     := $(sysconfdir)/periodic/daily
 HOURLY_DIR    := $(sysconfdir)/periodic/hourly
 SPOOL_DIR     := $(spooldir)/$(PROGNAME)
 
@@ -28,9 +29,10 @@ help:
 		| while read label desc; do printf '%-20s %s\n' "$$label" "$$desc"; done
 
 #: Install the scripts, configuration file and prepare the spool directory.
-install: $(D)/$(PROGNAME) $(D)/$(CONFNAME) $(D)/cesnet-tcs-fetch-issued
+install: $(D)/$(PROGNAME) $(D)/$(CONFNAME) $(D)/cesnet-tcs-fetch-issued $(D)/cesnet-tcs-renew
 	$(INSTALL) -m 755 -D $(D)/$(PROGNAME) "$(DESTDIR)$(bindir)/$(PROGNAME)"
 	$(INSTALL) -m 755 -D $(D)/cesnet-tcs-fetch-issued "$(DESTDIR)$(bindir)/cesnet-tcs-fetch-issued"
+	$(INSTALL) -m 755 -D $(D)/cesnet-tcs-renew "$(DESTDIR)$(bindir)/cesnet-tcs-renew"
 	$(INSTALL) -m 644 -D $(D)/$(CONFNAME) "$(DESTDIR)$(CONF_DIR)/$(CONFNAME)"
 	$(INSTALL) -m 755 -D post-fetch.sh "$(DESTDIR)$(CONF_DIR)/post-fetch.sh"
 	$(INSTALL) -d "$(DESTDIR)$(SPOOL_DIR)"
@@ -40,11 +42,14 @@ install: $(D)/$(PROGNAME) $(D)/$(CONFNAME) $(D)/cesnet-tcs-fetch-issued
 install-cron:
 	$(INSTALL) -d "$(DESTDIR)$(HOURLY_DIR)"
 	ln -s $(bindir)/cesnet-tcs-fetch-issued "$(DESTDIR)$(HOURLY_DIR)/cesnet-tcs-fetch-issued"
+	$(INSTALL) -d "$(DESTDIR)$(DAILY_DIR)"
+	ln -s $(bindir)/cesnet-tcs-renew "$(DESTDIR)$(DAILY_DIR)/cesnet-tcs-renew"
 
 #: Remove the scripts, configuration file and the spool directory.
 uninstall: uninstall-cron
 	rm -f "$(DESTDIR)$(bindir)/$(PROGNAME)"
 	rm -f "$(DESTDIR)$(bindir)/cesnet-tcs-fetch-issued"
+	rm -f "$(DESTDIR)$(bindir)/cesnet-tcs-renew"
 	rm -f "$(DESTDIR)$(CONF_DIR)/$(CONFNAME)"
 	rm -f "$(DESTDIR)$(CONF_DIR)/post-fetch.sh"
 	rm -f "$(DESTDIR)$(SPOOL_DIR)"/*
@@ -53,12 +58,13 @@ uninstall: uninstall-cron
 #: Remove symlinks for cron scripts.
 uninstall-cron:
 	rm -f "$(DESTDIR)$(HOURLY_DIR)/cesnet-tcs-fetch-issued"
+	rm -f "$(DESTDIR)$(DAILY_DIR)/cesnet-tcs-renew"
 
 #: Update version in the script and README.adoc to $VERSION.
 bump-version:
 	test -n "$(VERSION)"  # $$VERSION
 	$(SED) -E -i "s/^(readonly VERSION)=.*/\1='$(VERSION)'/" \
-		$(PROGNAME) cesnet-tcs-fetch-issued
+		$(PROGNAME) cesnet-tcs-fetch-issued cesnet-tcs-renew
 	$(SED) -E -i "s/^(:version:).*/\1 $(VERSION)/" README.adoc
 
 #: Bump version to $VERSION, create release commit and tag.

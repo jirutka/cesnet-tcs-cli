@@ -1,0 +1,100 @@
+#!/bin/sh
+#---help---
+# USAGE:
+#   cesnet-tcs-renew [-d | -h | -V]
+#
+# Checks all certificates in $certs_dir and for each that is N days to expire
+# (N is specified by $renew_days_before) sends a new certificate request to
+# CESNET TCS.  This script is supposed to be run periodically by cron.
+#
+# OPTIONS:
+#   -d --dry-run   Do not send any certificate request, just check the certs.
+#   -V --version   Print the script version and exit.
+#   -h --help      Show this message and exit.
+#
+# EXIT CODES:
+#   1              Generic error.
+#   3              cesnet-tcs error.
+#   4              OpenSSL error.
+#
+# Please report bugs at <https://github.com/jirutka/cesnet-tcs-cli/issues>.
+#---help---
+set -eu
+
+if ( set -o pipefail 2>/dev/null ); then
+	set -o pipefail
+else
+	echo "ERROR: Your shell does not support pipefail!" >&2
+	exit 1
+fi
+
+readonly PROGNAME='cesnet-tcs-renew'
+readonly VERSION='0.0.0'
+
+# Configuration variables that may be overwritten by the config file.
+certs_dir='/etc/ssl/cesnet'
+logger_facility='cron'
+renew_days_before=14
+
+
+help() {
+	sed -En '/^#---help---/,/^#---help---/p' "$0" | sed -E 's/^# ?//; 1d;$d;'
+}
+
+log() {
+	if [ $# -eq 2 ]; then
+		logger -s -t "$PROGNAME" -p "$logger_facility.$1" "$2"
+	else
+		logger -s -t "$PROGNAME" -p "$logger_facility.$1"
+	fi
+}
+
+cert_cn() {
+	openssl x509 -subject -in "$1" \
+		| sed -En 's|.*CN=([^/ ]+).*|\1|p' \
+		| grep .
+}
+
+cert_enddate() {
+	openssl x509 -noout -enddate -in "$1" \
+		| cut -d = -f 2
+}
+
+
+dry_run=no
+
+case "${1:-}" in
+	-d | --dry-run) dry_run=yes;;
+	-V | --version) echo "$PROGNAME $VERSION"; exit 0;;
+	-h | --help) help; exit 0;;
+esac
+
+. ${CESNET_TCS_CONFIG:="/etc/cesnet-tcs/cesnet-tcs.conf"} || {
+	log err "$CESNET_TCS_CONFIG does not exist or not readable!"
+	exit 1
+}
+
+checkend=$((renew_days_before * 86400))
+
+result=0
+for cert in $(find "$certs_dir" -name '*.crt'); do
+	domain=$(cert_cn "$cert") || {
+		log err "Failed to extract CN from $cert"
+		result=4
+		continue
+	}
+
+	if out=$(openssl x509 -checkend "$checkend" -in "$cert"); then
+		log debug "Certificate for $domain will expire on $(cert_enddate "$cert")"
+
+	elif [ "$out" = 'Certificate will expire' ]; then
+		log info "Requesting new certificate for $domain"
+		if [ "$dry_run" = no ]; then
+			cesnet-tcs req --silent "$domain" 2>&1 | log err || result=3
+		fi
+	else
+		result=4
+	fi
+done
+
+exit $result
