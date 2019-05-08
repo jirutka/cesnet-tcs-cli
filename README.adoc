@@ -1,0 +1,44 @@
+= CESNET TCS CLI
+:name: cesnet-tcs-cli
+:version: 0.0.0
+:gh-name: jirutka/{name}
+
+TODO
+
+
+== Requirements
+
+* http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html[POSIX-sh] compatible shell (e.g. Busybox ash, dash, ZSH, bash, …)
+
+
+== Installation
+
+NOTE: The project’s link:Makefile[] supports standard GNU variables such as `DESTDIR`, `prefix`, `bindir`…
+
+
+=== From git
+
+[source, sh, subs="verbatim, attributes"]
+----
+git clone -b v{version} https://github.com/{gh-name}.git
+cd {name}
+make install
+----
+
+
+=== From Tarball
+
+[source, sh, subs="verbatim, attributes"]
+----
+wget https://github.com/{gh-name}/archive/v{version}/{name}-{version}.tar.gz
+tar -xzf {name}-{version}.tar.gz
+cd {name}-{version}
+make install
+----
+
+
+== License
+
+This project is licensed under http://opensource.org/licenses/MIT[MIT License].
+For the full text of the license, see the link:LICENSE[LICENSE] file.
+
