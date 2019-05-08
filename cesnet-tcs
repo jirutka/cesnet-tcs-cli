@@ -1,0 +1,378 @@
+#!/bin/sh
+#---help---
+# USAGE:
+#   cesnet-tcs [-V | -h]
+#   cesnet-tcs req [-C] [options] <domain>
+#   cesnet-tcs fetch [-C] [options] <id> <file-or-domain>
+#
+# Requests a certificate or fetches the issued certificate from CESNET TCS.
+#
+# ARGUMENTS:
+#   domain                 The domain name for which to request a certificate.
+#
+#   file-or-domain         File path or domain name (CN) of the certificate.
+#                          If it contains a slash, it's recognized as a
+#                          file path where to write the fetched certificate.
+#                          If it's a hyphen (-), the certificate will be dumped
+#                          to STDOUT. Otherwise it's recognized as a domain name
+#                          and the certificate will be written to
+#                          "$certs_dir/<file-or-domain>.crt".
+#
+#   id                     ID of the certificate request.
+#
+# OPTIONS:
+#   -C --config FILE       Path of the configuration file to load. This option
+#                          must be specified first! Default is
+#                          "/etc/cesnet-tcs/cesnet-tcs.conf" (ignored if
+#                          doesn't exist).
+#
+#   --cert-type TYPE       Type of the certificate; "ov" (organization
+#                          validated), "es" (grid cert), or "ev" (extended
+#                          validation). Default is "ov".
+#
+#   --cert-validity YEARS  Validity of the certificate in years; 1, or 2.
+#                          Default is 2.
+#
+#   -c --client-cert FILE  Path of the client certificate for authentication.
+#
+#   -p --client-key FILE   Path of the client key for authentication.
+#
+#   -k --key FILE          Path of the certificate key in PEM format. It will
+#                          be generated if doesn't exist. Default is
+#                          "$keys_dir/<domain>.key".
+#
+#   -a --key-alg ALG       Algorithm to use for generating the certificate key.
+#                          Only RSA (e.g. "rsa:3072") and EC (e.g. "secp521r1")
+#                          are supported. Default is rsa:3072.
+#
+#   -B --no-backup-old     Do not backup existing certificate file (by renaming
+#                          to <name>.bak), just overwrite it.
+#
+#   -I --no-intermediate   Do not include intermediate certificate.
+#
+#   --notification-mails --mails EMAILS
+#                          Space separated e-mail address(es) where to send
+#                          warnings and information about the certificate.
+#
+#   --requester-phone --phone PHONE
+#                          Telephone number for verification of the requester
+#                          in int. E.123 format.
+#
+#   --subject-lang LANG    Language variant of the organization name; "cs",
+#                          "en", or "ac" (ASCII). Default is "en".
+#
+#   -T --timeout SEC       Connection and transfer timeout in seconds.
+#
+#   -v --verbose           Be verbose.
+#
+#   -V --version           Print the script version and exit.
+#
+#   -h --help              Show this message and exit.
+#
+# EXIT CODES:
+#   1                      Generic error code.
+#   2                      Invalid usage or missing required options.
+#   3                      Network error.
+#   4                      OpenSSL error.
+#   5                      CESNET TCS API returned an error.
+#   6                      The requested certificate has been refused.
+#   7                      The requested certificate has been revoked.
+#   100                    The requested certificate is waiting for approval.
+#   101                    The requested certificate is waiting for issuing.
+#
+# Please report bugs at <https://github.com/jirutka/cesnet-tcs-cli/issues>.
+#---help---
+set -eu
+
+readonly PROGNAME='cesnet-tcs'
+readonly VERSION='0.0.0'
+
+# Set pipefail if supported.
+if ( set -o pipefail 2>/dev/null ); then
+	set -o pipefail
+else
+	echo "$PROGNAME: WARNING: Your shell does not support pipefail, the script may not be reliable!" >&2
+fi
+
+: ${CESNET_TCS_CONFIG:="/etc/cesnet-tcs/cesnet-tcs.conf"}
+
+# Global configuration variables that may be overwritten by the config file.
+backup_old=yes
+cert_type='ov'
+cert_validity=2
+certs_dir='/etc/ssl/cesnet'
+cesnet_api_uri='https://tcs.cesnet.cz/api/v2'
+client_cert=
+client_key=
+interm_cert_include=yes
+interm_cert_url='https://pki.cesnet.cz/certs/TERENA_SSL_CA_3.pem'
+key_alg='rsa:3072'
+key_umask=277
+keys_dir='/etc/ssl/cesnet'
+notification_mails=
+requester_phone=
+spool_dir="/var/spool/$PROGNAME"
+subject_lang='en'
+timeout=
+verbose=no
+
+
+help() {
+	sed -En '/^#---help---/,/^#---help---/p' "$0" | sed -E 's/^# ?//; 1d;$d;'
+}
+
+die() {
+	local status="$1"
+	local msg="$2"
+
+	printf '%s: %s\n' "$PROGNAME" "$msg" >&2
+	exit $status
+}
+
+load_config() {
+	local filename="$1"
+	[ -r "$filename" ] || die 2 "File $filename does not exist or not readable!"
+
+	. "$filename"
+}
+
+json_get() {
+	local key="$1"
+	local json="$2"
+
+	printf '%s\n' "$json" \
+		| tr '\n' ' ' \
+		| sed -En "s^.*\"$key\":\s*(\"([^\"]+)\"|([^, }]+)).*^\2\3^p" \
+		| grep .
+}
+
+escape_newlines() {
+	printf '%s' "$1" | sed 's/$/\\n/' | tr -d '\n' | sed 's/\\n$//'
+}
+
+write_file() {
+	local dest_file="$1"
+	local content="$2"
+
+	if [ "$backup_old" = yes ] &&  [ -e "$dest_file" ]; then
+		cp -a "$dest_file" "$dest_file".bak
+	fi
+
+	mkdir -p "$(dirname "$dest_file")"
+	printf '%s\n' "$content" > "$dest_file"
+}
+
+gen_req() {
+	local cn="$1"
+	local key_file="$2"
+
+	openssl req -new -sha256 -key "$key_file" -subj "/CN=$cn"
+}
+
+gen_key() {
+	local outfile="$1"
+	local orig_umask=$(umask)
+
+	mkdir -p "$(dirname "$outfile")"
+	umask "$key_umask"
+
+	case "$key_alg" in
+		rsa:*) openssl genrsa -out "$outfile" ${key_alg#*:};;
+		*) openssl ecparam -name "$key_alg" -genkey -param_enc explicit -out "$outfile";;
+	esac
+
+	umask "$orig_umask"
+}
+
+get_cert_status() {
+	local id="$1"
+
+	_curl \
+		--cert "$client_cert" \
+		--key "$client_key" \
+		"$cesnet_api_uri/certificate/status/$id"
+}
+
+post_cert_request() {
+	local payload="$payload"
+
+	_curl \
+		--cert "$client_cert" \
+		--key "$client_key" \
+		--data "$payload" \
+		--header 'Content-Type: application/json' \
+		--header 'Accept: application/json' \
+		"$cesnet_api_uri/certificate/request"
+}
+
+format_req_json() {
+	local cert_req="$1"
+
+	cat <<-EOF
+	{
+	  "certificateRequest": "$(escape_newlines "$cert_req")",
+	  "certificateType": "$cert_type",
+	  "certificateValidity": $cert_validity,
+	  "subjectLanguage": "$subject_lang",
+	  "notificationMail": "$notification_mails",
+	  "requesterPhone": "$requester_phone"
+	}
+	EOF
+}
+
+_curl() {
+	local opts=''
+
+	if [ "$timeout" ]; then
+		opts="--connect-timeout $timeout --max-time $timeout"
+	fi
+	if [ "$verbose" = yes ]; then
+		opts="$opts --verbose"
+	else
+		opts="$opts --silent --show-error"
+	fi
+
+	curl $opts "$@"
+}
+
+fetch() {
+	local id="$1"
+	local outfile resp cert
+
+	case "${2:-}" in
+		*/*) outfile="$2";;
+		-) outfile='-';;
+		*) outfile="$certs_dir/$2.crt";;
+	esac
+
+	resp=$(get_cert_status "$id") \
+		|| die 3 'failed to get certificate status'
+
+	case "$(json_get 'status' "$resp")" in
+		issued)
+			cert=$(set -eu
+				printf -- "$(json_get 'certificate' "$resp")"
+				[ "$interm_cert_include" = no ] || _curl "$interm_cert_url" \
+					|| die 3 'failed to fetch intermediate certificate'
+			)
+			if [ "$outfile" = '-' ]; then
+				printf '%s\n' "$cert"
+			else
+				write_file "$outfile" "$cert"
+			fi
+		;;
+		added)
+			die 100 "$id is waiting for approval"
+		;;
+		accepted)
+			die 101 "$id has been accepted, but not issued yet"
+		;;
+		refused)
+			die 6 "$id has been refused"
+		;;
+		revoked)
+			die 7 "$id has been revoked"
+		;;
+		*)
+			die 5 "api error: $(json_get 'message' "$resp" || echo "$resp")"
+		;;
+	esac
+}
+
+req() {
+	local domain="$1"
+	local key_file="${key_file:-"$keys_dir/$domain.key"}"
+	local cert_req id payload resp
+
+	if ! [ -f "$key_file" ]; then
+		gen_key "$key_file" || die 4 'failed to generate key'
+	fi
+
+	cert_req=$(gen_req "$domain" "$key_file") \
+		|| die 4 'failed to generate certificate request'
+
+	payload=$(format_req_json "$cert_req")
+	[ "$verbose" = yes ] && echo "$payload" >&2
+
+	resp=$(post_cert_request "$payload") \
+		|| die 3 'failed to send certificate request'
+
+	[ "$verbose" = yes ] && echo "$resp" >&2
+
+	case "$(json_get 'status' "$resp" || :)" in
+		ok)
+			id=$(json_get 'id' "$resp")
+			if [ -d "$spool_dir" ]; then
+				echo "$domain" > "$spool_dir/$id"
+			fi
+			echo "$id"
+		;;
+		error)
+			die 5 "api error: $(json_get 'message' "$resp"): $(json_get 'detail' "$resp" ||:)"
+		;;
+		*)
+			die 5 "api error: $resp"
+		;;
+	esac
+}
+
+
+#-----------------------------  M a i n  -----------------------------#
+
+_action=
+case "${1:-}" in
+	fetch | req) _action="$1"; shift;;
+	-V | --version) echo "$PROGNAME $VERSION"; exit 0;;
+	-h | --help) help; exit 0;;
+	-*) die 2 'invalid usage: fetch or req expected';;
+	'') help >&2; exit 2;;
+	*) die 2 "unknown action: $1";;
+esac
+
+case "${1:-}" in
+	-C | --config) load_config "$2"; shift 2;;
+	*) [ -r "$CESNET_TCS_CONFIG" ] && load_config "$CESNET_TCS_CONFIG";;
+esac
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--*=*) opt="${1%%=*}" val="${1#*=}" n=1;;
+		-*) opt="$1" val="${2:-}" n=2;;
+		*) break;;
+	esac
+	case "$opt" in
+		-C | --config) die 2 'invalid usage: --config must be specified before other options!';;
+		     --cert-type) cert_type="$val";;
+		     --cert-validity) cert_validity="$val";;
+		-c | --client-cert) client_cert="$val";;
+		-p | --client-key) client_key="$val";;
+		-k | --key) key_file="$val";;
+		-a | --key-alg) key_alg="$val";;
+		-B | --no-backup-old) backup_old=no; n=1;;
+		-I | --no-intermediate) interm_cert_include=no; n=1;;
+		     --notification-mails | --mails) notification_mails="$val";;
+		     --requester-phone | --phone) requester_phone="$val";;
+		     --subject-lang) subject_lang="$val";;
+		-T | --timeout) timeout="$val";;
+		-v | --verbose) verbose=yes; n=1;;
+		-V | --version) echo "$PROGNAME $VERSION"; exit 0;;
+		-h | --help) help; exit 0;;
+		-*) die 2 "unknown option: $opt";;
+	esac
+	shift $n
+done
+
+[ $# -gt 0 ] || die 2 'missing argument, read --help!'
+[ "$client_cert" ] || die 2 'missing required option --client-cert!'
+[ "$client_key" ] || die 2 'missing required option --client-key!'
+
+case "$_action" in
+	fetch)
+		[ $# -eq 2 ] || die 2 'invalid number of arguments, read --help!'
+	;;
+	req)
+		[ "$requester_phone" ] || die 2 'missing required option --requester-phone!'
+	;;
+esac
+
+$_action "$@"

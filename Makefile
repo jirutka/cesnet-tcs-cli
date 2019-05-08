@@ -3,7 +3,12 @@ CONFNAME       = $(PROGNAME).conf
 
 prefix        := /usr/local
 bindir        := $(prefix)/bin
+spooldir      := /var/spool
 sysconfdir    := /etc
+
+CERTS_DIR     := $(sysconfdir)/ssl/cesnet
+CONF_DIR      := $(sysconfdir)/$(PROGNAME)
+SPOOL_DIR     := $(spooldir)/$(PROGNAME)
 
 INSTALL       := install
 GIT           := git
@@ -16,15 +21,19 @@ help:
 	@$(SED) -En '/^#:.*/{ N; s/^#: (.*)\n([A-Za-z0-9_-]+).*/\2 \1/p }' $(MAKEFILE_LIST) \
 		| while read label desc; do printf '%-20s %s\n' "$$label" "$$desc"; done
 
-#: Install the script and configuration file.
+#: Install the script, configuration file and prepare the spool directory.
 install:
 	$(INSTALL) -m 755 -D $(PROGNAME) "$(DESTDIR)$(bindir)/$(PROGNAME)"
-	$(INSTALL) -m 644 -D $(CONFNAME) "$(DESTDIR)$(sysconfdir)/$(CONFNAME)"
+	$(INSTALL) -m 644 -D $(CONFNAME) "$(DESTDIR)$(CONF_DIR)/$(CONFNAME)"
+	$(INSTALL) -d "$(DESTDIR)$(SPOOL_DIR)"
+	$(INSTALL) -d "$(DESTDIR)$(CERTS_DIR)"
 
-#: Remove the script and configuration file.
+#: Remove the script, configuration file and the spool directory.
 uninstall:
 	rm -f "$(DESTDIR)$(bindir)/$(PROGNAME)"
-	rm -f "$(DESTDIR)$(sysconfdir)/$(CONFNAME)"
+	rm -f "$(DESTDIR)$(CONF_DIR)/$(CONFNAME)"
+	rm -f "$(DESTDIR)$(SPOOL_DIR)"/*
+	rmdir "$(DESTDIR)$(SPOOL_DIR)"
 
 #: Update version in the script and README.adoc to $VERSION.
 bump-version:
