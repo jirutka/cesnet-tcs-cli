@@ -58,6 +58,11 @@
 #                          Telephone number for verification of the requester
 #                          in int. E.123 format.
 #
+#   -s --silent            Do not print certificate request ID and do not
+#                          output any message when the certificate to be
+#                          fetched is waiting for approval or issuing (exit
+#                          codes 100 and 101).
+#
 #   --subject-lang LANG    Language variant of the organization name; "cs",
 #                          "en", or "ac" (ASCII). Default is "en".
 #
@@ -111,6 +116,7 @@ key_umask=277
 keys_dir='/etc/ssl/cesnet'
 notification_mails=
 requester_phone=
+silent=no
 spool_dir="/var/spool/$PROGNAME"
 subject_lang='en'
 timeout=
@@ -125,7 +131,9 @@ die() {
 	local status="$1"
 	local msg="$2"
 
-	printf '%s: %s\n' "$PROGNAME" "$msg" >&2
+	if [ "$silent" = no ] || [ "$status" -lt 100 ]; then
+		printf '%s: %s\n' "$PROGNAME" "$msg" >&2
+	fi
 	exit $status
 }
 
@@ -305,7 +313,7 @@ req() {
 			if [ -d "$spool_dir" ]; then
 				echo "$domain" > "$spool_dir/$id"
 			fi
-			echo "$id"
+			[ "$silent" = yes ] || echo "$id"
 		;;
 		error)
 			die 5 "api error: $(json_get 'message' "$resp"): $(json_get 'detail' "$resp" ||:)"
@@ -352,6 +360,7 @@ while [ $# -gt 0 ]; do
 		-I | --no-intermediate) interm_cert_include=no; n=1;;
 		     --notification-mails | --mails) notification_mails="$val";;
 		     --requester-phone | --phone) requester_phone="$val";;
+		-s | --silent) silent=yes; n=1;;
 		     --subject-lang) subject_lang="$val";;
 		-T | --timeout) timeout="$val";;
 		-v | --verbose) verbose=yes; n=1;;
