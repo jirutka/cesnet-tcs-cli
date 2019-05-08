@@ -1,6 +1,9 @@
 PROGNAME       = cesnet-tcs
 CONFNAME       = $(PROGNAME).conf
 
+BUILD_DIR     := .build
+SCRIPT_SHELL  := /bin/sh
+
 prefix        := /usr/local
 bindir        := $(prefix)/bin
 spooldir      := /var/spool
@@ -14,6 +17,8 @@ INSTALL       := install
 GIT           := git
 SED           := sed
 
+D              = $(BUILD_DIR)
+
 
 #: Print list of targets.
 help:
@@ -22,9 +27,9 @@ help:
 		| while read label desc; do printf '%-20s %s\n' "$$label" "$$desc"; done
 
 #: Install the script, configuration file and prepare the spool directory.
-install:
-	$(INSTALL) -m 755 -D $(PROGNAME) "$(DESTDIR)$(bindir)/$(PROGNAME)"
-	$(INSTALL) -m 644 -D $(CONFNAME) "$(DESTDIR)$(CONF_DIR)/$(CONFNAME)"
+install: $(D)/$(PROGNAME) $(D)/$(CONFNAME)
+	$(INSTALL) -m 755 -D $(D)/$(PROGNAME) "$(DESTDIR)$(bindir)/$(PROGNAME)"
+	$(INSTALL) -m 644 -D $(D)/$(CONFNAME) "$(DESTDIR)$(CONF_DIR)/$(CONFNAME)"
 	$(INSTALL) -d "$(DESTDIR)$(SPOOL_DIR)"
 	$(INSTALL) -d "$(DESTDIR)$(CERTS_DIR)"
 
@@ -48,6 +53,18 @@ release: .check-git-clean | bump-version
 	$(GIT) commit -m "Release version $(VERSION)"
 	$(GIT) tag v$(VERSION) -m v$(VERSION)
 
+
+
+$(D)/%: % | $(D)
+	@$(SED) \
+		-e 's|^#!/bin/sh|#!$(SCRIPT_SHELL)|' \
+		-e 's|/etc/cesnet-tcs/cesnet-tcs\.conf|$(CONF_DIR)/$(CONFNAME)|g' \
+		-e 's|/var/spool/cesnet-tcs|$(SPOOL_DIR)|g' \
+		-e 's|/etc/ssl/cesnet|$(CERTS_DIR)|g' \
+		$< > $@
+
+$(D):
+	@mkdir -p "$(D)"
 
 .check-git-clean:
 	@test -z "$(shell $(GIT) status --porcelain)" \
