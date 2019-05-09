@@ -1,5 +1,6 @@
 PROGNAME       = cesnet-tcs
 CONFNAME       = $(PROGNAME).conf
+SCRIPTS        = cesnet-tcs cesnet-tcs-fetch-issued cesnet-tcs-renew
 
 BUILD_DIR     := .build
 SCRIPT_SHELL  := /bin/sh
@@ -29,10 +30,10 @@ help:
 		| while read label desc; do printf '%-20s %s\n' "$$label" "$$desc"; done
 
 #: Install the scripts, configuration file and prepare the spool directory.
-install: $(D)/$(PROGNAME) $(D)/$(CONFNAME) $(D)/cesnet-tcs-fetch-issued $(D)/cesnet-tcs-renew
-	$(INSTALL) -m 755 -D $(D)/$(PROGNAME) "$(DESTDIR)$(bindir)/$(PROGNAME)"
-	$(INSTALL) -m 755 -D $(D)/cesnet-tcs-fetch-issued "$(DESTDIR)$(bindir)/cesnet-tcs-fetch-issued"
-	$(INSTALL) -m 755 -D $(D)/cesnet-tcs-renew "$(DESTDIR)$(bindir)/cesnet-tcs-renew"
+install: $(addprefix $(D)/,$(SCRIPTS)) $(D)/$(CONFNAME)
+	for script in $(SCRIPTS); do \
+		$(INSTALL) -m 755 -D $(D)/$$script "$(DESTDIR)$(bindir)/$$script"; \
+	done
 	$(INSTALL) -m 644 -D $(D)/$(CONFNAME) "$(DESTDIR)$(CONF_DIR)/$(CONFNAME)"
 	$(INSTALL) -m 755 -D post-fetch.sh "$(DESTDIR)$(CONF_DIR)/post-fetch.sh"
 	$(INSTALL) -d "$(DESTDIR)$(SPOOL_DIR)"
@@ -47,9 +48,7 @@ install-cron:
 
 #: Remove the scripts, configuration file and the spool directory.
 uninstall: uninstall-cron
-	rm -f "$(DESTDIR)$(bindir)/$(PROGNAME)"
-	rm -f "$(DESTDIR)$(bindir)/cesnet-tcs-fetch-issued"
-	rm -f "$(DESTDIR)$(bindir)/cesnet-tcs-renew"
+	rm -f $(addprefix "$(DESTDIR)$(bindir)"/,$(SCRIPTS))
 	rm -f "$(DESTDIR)$(CONF_DIR)/$(CONFNAME)"
 	rm -f "$(DESTDIR)$(CONF_DIR)/post-fetch.sh"
 	rm -f "$(DESTDIR)$(SPOOL_DIR)"/*
@@ -63,8 +62,7 @@ uninstall-cron:
 #: Update version in the script and README.adoc to $VERSION.
 bump-version:
 	test -n "$(VERSION)"  # $$VERSION
-	$(SED) -E -i "s/^(readonly VERSION)=.*/\1='$(VERSION)'/" \
-		$(PROGNAME) cesnet-tcs-fetch-issued cesnet-tcs-renew
+	$(SED) -E -i "s/^(readonly VERSION)=.*/\1='$(VERSION)'/" $(SCRIPTS)
 	$(SED) -E -i "s/^(:version:).*/\1 $(VERSION)/" README.adoc
 
 #: Bump version to $VERSION, create release commit and tag.
