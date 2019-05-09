@@ -43,6 +43,38 @@ make install-cron
 ----
 
 
+== Files and Directories
+
+link:cesnet-tcs[/usr/bin/cesnet-tcs]::
+  Requests a certificate or fetches the issued certificate from CESNET TCS.
+
+link:cesnet-tcs-fetch-issued[/usr/bin/cesnet-tcs-fetch-issued] (<– /etc/periodic/hourly/cesnet-tcs-fetch-issued)::
+  Checks pending certificate requests in `$spool_dir` footnote:[`cesnet-tcs req` writes theres file for each requested certificate.] and fetches all that are already issued.
+  Afterwards runs `$post_fetch_script` with domain names of the fetched certificates as arguments, if there are some.
+  This script is supposed to be run periodically by cron.
+
+link:cesnet-tcs-renew[/usr/bin/cesnet-tcs-renew] (<– /etc/periodic/daily/cesnet-tcs-renew)::
+  Checks all certificates in `$certs_dir` and for each that is _N_ days to expire (_N_ is specified by `$renew_days_before`) sends a new certificate request to CESNET TCS.
+  This script is supposed to be run periodically by cron.
+
+link:cesnet-tcs.conf[/etc/cesnet-tcs/cesnet-tcs.conf]::
+  Configuration file in shell syntax for all the above scripts.
+
+link:post-fetch.sh[/etc/cesnet-tcs/post-fetch.sh]::
+  A hook script that is executed by `cesnet-tcs-fetch-issued` after it fetches some new certificate(s).
+
+/etc/ssl/cesnet::
+  Directory where certificates and keys are stored.
+  The location can be changed by `$certs_dir` and `$keys_dir` config variables.
+
+/var/spool/cesnet-tcs::
+  Directory where IDs of the sent certificate requests are stored.
+  The location can be changed by `$spool_dir` config variable.
+
+
+NOTE: All paths correspond to installation with `prefix=/usr`.
+
+
 == License
 
 This project is licensed under http://opensource.org/licenses/MIT[MIT License].
