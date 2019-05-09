@@ -3,7 +3,8 @@
 :version: 0.0.0
 :gh-name: jirutka/{name}
 
-TODO
+This project provides CLI utility `cesnet-tcs` for requesting and fetching server certificates from https://tcs.cesnet.cz/en/[CESNET TCS] using https://pki.cesnet.cz/cs/tcs-api-documentation.html[TCS API].
+It also provides ready-made cron scripts for complete automation of the certificates renewal before expiration.
 
 
 == Requirements
