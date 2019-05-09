@@ -20,6 +20,16 @@ It also provides ready-made cron scripts for complete automation of the certific
 NOTE: The project’s link:Makefile[] supports standard GNU variables such as `DESTDIR`, `prefix`, `bindir`…
 
 
+=== On Alpine Linux
+
+[source, sh, subs="verbatim, attributes"]
+apk add {name}
+ln -s /usr/bin/cesnet-tcs-fetch-issued /etc/periodic/hourly/
+ln -s /usr/bin/cesnet-tcs-renew /etc/periodic/daily/
+
+IMPORTANT: This package is not in Alpine stable yet. You can also install it from _edge_ (unstable) branch or author’s backports repository https://repo.jirutka.cz/alpine/v3.9/backports/.
+
+
 === From git
 
 [source, sh, subs="verbatim, attributes"]
