@@ -43,6 +43,16 @@ make install-cron
 ----
 
 
+== Usage
+
+See `--help` of link:cesnet-tcs#L3[cesnet-tcs], link:cesnet-tcs-fetch-issued#L3[cesnet-tcs-fetch-issued], link:cesnet-tcs-renew#L3[cesnet-tcs-renew] and comments in link:cesnet-tcs.conf[].
+
+.*Typical workflow in a nutshell:*
+. Request a new certificate using `cesnet-tcs req my.example.org`
+. Once the request is approved and the certificate issued, the `cesnet-tcs-fetch-issued` cron script will automatically fetch it and store in `/etc/ssl/cesnet`.
+. Two weeks before the certificate’s expiration date the `cesnet-tcs-renew` cron script will automatically request a new one. _goto 2_
+
+
 == Files and Directories
 
 link:cesnet-tcs[/usr/bin/cesnet-tcs]::
