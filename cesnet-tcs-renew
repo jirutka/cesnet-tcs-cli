@@ -51,7 +51,7 @@ log() {
 
 cert_cn() {
 	openssl x509 -subject -in "$1" \
-		| sed -En 's|.*CN=([^/ ]+).*|\1|p' \
+		| sed -En 's|.*CN\s*=\s*([^/ ]+).*|\1|p' \
 		| grep .
 }
 
