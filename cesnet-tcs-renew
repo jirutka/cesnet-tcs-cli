@@ -35,6 +35,7 @@ readonly VERSION='0.1.1'
 certs_dir='/etc/ssl/cesnet'
 logger_facility='cron'
 renew_days_before=14
+spool_dir='/var/spool/cesnet-tcs'
 
 
 help() {
@@ -58,6 +59,14 @@ cert_cn() {
 cert_enddate() {
 	openssl x509 -noout -enddate -in "$1" \
 		| cut -d = -f 2
+}
+
+# If certificate for the given domain is currently pending, prints date when
+# it was requested. Otherwise returns 1.
+pending_req_date() {
+	local filename=$(grep -Hrx "$1" "$spool_dir" 2>/dev/null \
+		| cut -d: -f1 | tail -n 1 || :)
+	stat -c%y "$filename" 2>/dev/null | sed 's/\..*$//' | grep .
 }
 
 
@@ -88,9 +97,13 @@ for cert in $(find "$certs_dir" -name '*.crt'); do
 		log debug "Certificate for $domain will expire on $(cert_enddate "$cert")"
 
 	elif [ "$out" = 'Certificate will expire' ]; then
-		log info "Requesting new certificate for $domain"
-		if [ "$dry_run" = no ]; then
-			cesnet-tcs req --silent "$domain" 2>&1 | log err || result=3
+		if date=$(pending_req_date "$domain"); then
+			log info "Certificate for $domain was requested on $date"
+		else
+			log info "Requesting new certificate for $domain"
+			if [ "$dry_run" = no ]; then
+				cesnet-tcs req --silent "$domain" 2>&1 | log err || result=3
+			fi
 		fi
 	else
 		result=4
