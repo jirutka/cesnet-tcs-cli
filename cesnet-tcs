@@ -271,7 +271,9 @@ fetch() {
 			[ "$silent" = yes ] || echo "$id is waiting for approval"
 			exit 100
 		;;
-		accepted)
+		# XXX: The current API version returns false instead of "accepted".
+		# They're planning to fix it in some newer version.
+		accepted | false)
 			[ "$silent" = yes ] || echo "$id has been accepted, but not issued yet"
 			exit 101
 		;;
