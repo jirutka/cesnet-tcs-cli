@@ -37,6 +37,10 @@
 #
 #   -p --client-key FILE   Path of the client key for authentication.
 #
+#   -t --create-temp-cert  Create a temporary self-signed certificate in
+#                          $certs_dir/<domain>.crt that can be used until the
+#                          requested certificate is issued.
+#
 #   -k --key FILE          Path of the certificate key in PEM format. It will
 #                          be generated if doesn't exist. Default is
 #                          "$keys_dir/<domain>.key".
@@ -92,6 +96,8 @@ set -eu
 readonly PROGNAME='cesnet-tcs'
 readonly VERSION='0.1.3'
 
+readonly TEMP_CERT_LABEL='Temporary certificate'
+
 # Set pipefail if supported.
 if ( set -o pipefail 2>/dev/null ); then
 	set -o pipefail
@@ -109,6 +115,7 @@ certs_dir='/etc/ssl/cesnet'
 cesnet_api_uri='https://tcs.cesnet.cz/api/v2'
 client_cert=
 client_key=
+create_temp_cert=no
 interm_cert_include=yes
 interm_cert_url='https://pki.cesnet.cz/certs/TERENA_SSL_CA_3.pem'
 key_alg='rsa:3072'
@@ -160,7 +167,9 @@ write_file() {
 	local dest_file="$1"
 	local content="$2"
 
-	if [ "$backup_old" = yes ] &&  [ -e "$dest_file" ]; then
+	if [ "$backup_old" = yes ] && [ -e "$dest_file" ] \
+		&& ! grep -Fqw "$TEMP_CERT_LABEL" "$dest_file" 2>/dev/null
+	then
 		cp -a "$dest_file" "$dest_file".bak
 	fi
 
@@ -188,6 +197,21 @@ gen_key() {
 	esac
 
 	umask "$orig_umask"
+}
+
+gen_temp_cert() {
+	local cn="$1"
+	local key_file="$2"
+
+	# We set validity to equal $renew_days_before because it's basically a
+	# maximum expected time it may take for the certificate to be issued.
+	# Also if cesnet-tcs req fails because of a network or API failure, we
+	# can rely on cesnet-tcs-renew to detect this temporary certificate as soon
+	# to expire and send a new request.
+	echo "# $TEMP_CERT_LABEL"
+	openssl req -key "$key_file" -new -x509 \
+		-subj "/CN=$cn/O=$TEMP_CERT_LABEL" \
+		-days "$renew_days_before"
 }
 
 get_cert_status() {
@@ -292,10 +316,17 @@ fetch() {
 req() {
 	local domain="$1"
 	local key_file="${key_file:-"$keys_dir/$domain.key"}"
+	local cert_file="$certs_dir/$domain.crt"
 	local cert_req id payload resp
 
 	if ! [ -f "$key_file" ]; then
 		gen_key "$key_file" || die 4 'failed to generate key'
+	fi
+
+	if [ "$create_temp_cert" = yes ] && ! [ -f "$cert_file" ]; then
+		mkdir -p "$certs_dir"
+		gen_temp_cert "$domain" "$key_file" > "$cert_file" \
+			|| die 4 'failed to generate temporary certificate'
 	fi
 
 	cert_req=$(gen_req "$domain" "$key_file") \
@@ -356,6 +387,7 @@ while [ $# -gt 0 ]; do
 		     --cert-validity) cert_validity="$val";;
 		-c | --client-cert) client_cert="$val";;
 		-p | --client-key) client_key="$val";;
+		-t | --create-temp-cert) create_temp_cert=yes; n=1;;
 		-k | --key) key_file="$val";;
 		-a | --key-alg) key_alg="$val";;
 		-B | --no-backup-old) backup_old=no; n=1;;
