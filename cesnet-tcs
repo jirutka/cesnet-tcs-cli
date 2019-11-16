@@ -31,7 +31,7 @@
 #                          validation). Default is "ov".
 #
 #   --cert-validity YEARS  Validity of the certificate in years; 1, or 2.
-#                          Default is 2.
+#                          Default is 1.
 #
 #   -c --client-cert FILE  Path of the client certificate for authentication.
 #
@@ -110,7 +110,7 @@ fi
 # Global configuration variables that may be overwritten by the config file.
 backup_old=yes
 cert_type='ov'
-cert_validity=2
+cert_validity=1
 certs_dir='/etc/ssl/cesnet'
 cesnet_api_uri='https://tcs.cesnet.cz/api/v2'
 client_cert=
