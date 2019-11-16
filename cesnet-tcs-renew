@@ -29,7 +29,7 @@ else
 fi
 
 readonly PROGNAME='cesnet-tcs-renew'
-readonly VERSION='0.1.3'
+readonly VERSION='0.2.0'
 
 # Configuration variables that may be overwritten by the config file.
 certs_dir='/etc/ssl/cesnet'
