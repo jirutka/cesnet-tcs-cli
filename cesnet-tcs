@@ -122,6 +122,7 @@ key_alg='rsa:3072'
 key_umask=277
 keys_dir='/etc/ssl/cesnet'
 notification_mails=
+renew_days_before=14
 requester_phone=
 silent=no
 spool_dir="/var/spool/$PROGNAME"
