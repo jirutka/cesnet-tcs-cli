@@ -4,8 +4,10 @@
 #   cesnet-tcs [-V | -h]
 #   cesnet-tcs req [-C] [options] <domain> [<alt-name>...]
 #   cesnet-tcs fetch [-C] [options] <id> <file-or-domain>
+#   cesnet-tcs list [-C]
 #
-# Requests a certificate or fetches the issued certificate from CESNET TCS.
+# Request a certificate or fetch the issued certificate from CESNET TCS
+# or list existing certificates with alt names and expiration date.
 #
 # ARGUMENTS:
 #   domain                 The domain name for which to request a certificate.
@@ -276,6 +278,30 @@ _curl() {
 	curl $opts "$@"
 }
 
+list() {
+	local altnames cn crtfile enddate x509
+
+	for crtfile in $(find "$certs_dir" -name '*.crt' | sort); do
+		# openssl is crappy, it returns 0 even on error, that's why grep...
+		x509=$(openssl x509 -noout -text -in "$crtfile" \
+			| grep -C 9999 '^Certificate:') \
+			|| die 4 "failed to read $crtfile"
+
+		cn=$(echo "$x509" \
+			| sed -En 's|^\s*Subject: .*CN\s*=\s*([^/ ]+).*|\1|p')
+		altnames=$(echo "$x509" \
+			| grep -A1 'X509v3 Subject Alternative Name:' \
+			| sed -En 's/\s*//g;s/DNS:([^, ]+),?/\1 /gp' \
+			| xargs printf '%s\n' \
+			| grep -xv "$cn" || :)
+		enddate=$(echo "$x509" \
+			| grep -A2 'Validity\b' \
+			| sed -En 's/\s*Not After\s*: (.*) [A-Z]+$/\1/p')
+
+		printf '%s\t%s\n' "$(echo $cn $altnames)" "$(date -I -u -d "$enddate")"
+	done
+}
+
 fetch() {
 	local id="$1"
 	local outfile resp cert
@@ -374,7 +400,7 @@ req() {
 
 _action=
 case "${1:-}" in
-	fetch | req) _action="$1"; shift;;
+	list | fetch | req) _action="$1"; shift;;
 	-V | --version) echo "$PROGNAME $VERSION"; exit 0;;
 	-h | --help) help; exit 0;;
 	-*) die 2 'invalid usage: fetch or req expected';;
@@ -417,15 +443,14 @@ while [ $# -gt 0 ]; do
 	shift $n
 done
 
-[ $# -gt 0 ] || die 2 'missing argument, read --help!'
-[ "$client_cert" ] || die 2 'missing required option --client-cert!'
-[ "$client_key" ] || die 2 'missing required option --client-key!'
-
 case "$_action" in
 	fetch)
 		[ $# -eq 2 ] || die 2 'invalid number of arguments, read --help!'
 	;;
 	req)
+		[ $# -gt 0 ] || die 2 'missing argument, read --help!'
+		[ "$client_cert" ] || die 2 'missing required option --client-cert!'
+		[ "$client_key" ] || die 2 'missing required option --client-key!'
 		[ "$requester_phone" ] || die 2 'missing required option --requester-phone!'
 	;;
 esac
