@@ -12,7 +12,7 @@ It also provides ready-made cron scripts for complete automation of the certific
 * http://pubs.opengroup.org/onlinepubs/9699919799/utilities/V3_chap02.html[POSIX-sh] compatible shell (e.g. Busybox ash, dash, ZSH, bash, …)
 * `grep`, `sed`, `tr` (both GNU and Busybox)
 * `curl`
-* `openssl`
+* `openssl` (≥ 1.1.1 if you use subject alternative names)
 
 
 == Installation

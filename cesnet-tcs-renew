@@ -56,6 +56,14 @@ cert_cn() {
 		| grep .
 }
 
+# Parses and prints Subject Alternative Names of the type DNS.
+cert_alt_names() {
+	openssl x509 -noout -text -in "$1" \
+		| grep -A1 'X509v3 Subject Alternative Name:' \
+		| sed -En 's/\s*//g;s/DNS:([^, ]+),?/\1 /gp' \
+		| xargs printf '%s\n'
+}
+
 cert_enddate() {
 	openssl x509 -noout -enddate -in "$1" \
 		| cut -d = -f 2
@@ -100,9 +108,11 @@ for cert in $(find "$certs_dir" -name '*.crt'); do
 		if date=$(pending_req_date "$domain"); then
 			log info "Certificate for $domain was requested on $date"
 		else
-			log info "Requesting new certificate for $domain"
+			alt_names=$(cert_alt_names "$cert" | grep -vx "$domain")
+
+			log info "Requesting new certificate for $domain${alt_names:+" ($alt_names)"}"
 			if [ "$dry_run" = no ]; then
-				cesnet-tcs req --silent "$domain" 2>&1 | log err || result=3
+				cesnet-tcs req --silent "$domain" $alt_names 2>&1 | log err || result=3
 			fi
 		fi
 	else

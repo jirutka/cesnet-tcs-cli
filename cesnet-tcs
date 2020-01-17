@@ -2,13 +2,15 @@
 #---help---
 # USAGE:
 #   cesnet-tcs [-V | -h]
-#   cesnet-tcs req [-C] [options] <domain>
+#   cesnet-tcs req [-C] [options] <domain> [<alt-name>...]
 #   cesnet-tcs fetch [-C] [options] <id> <file-or-domain>
 #
 # Requests a certificate or fetches the issued certificate from CESNET TCS.
 #
 # ARGUMENTS:
 #   domain                 The domain name for which to request a certificate.
+#
+#   alt-name               Subject alternative (domain) name.
 #
 #   file-or-domain         File path or domain name (CN) of the certificate.
 #                          If it contains a slash, it's recognized as a
@@ -178,11 +180,17 @@ write_file() {
 	printf '%s\n' "$content" > "$dest_file"
 }
 
-gen_req() {
-	local cn="$1"
-	local key_file="$2"
+format_subj_alt_name() {
+	echo $* | xargs -r printf 'DNS:%s,' | sed 's/,$/\n/;s/^/subjectAltName=/'
+}
 
-	openssl req -new -sha256 -key "$key_file" -subj "/CN=$cn"
+gen_req() {
+	local key_file="$1"
+	local cn="$2"
+	local alt_names="${3:-}"
+
+	openssl req -new -sha256 -key "$key_file" -subj "/CN=$cn" \
+		${alt_names:+-addext "$(format_subj_alt_name $cn $alt_names)"}
 }
 
 gen_key() {
@@ -201,8 +209,9 @@ gen_key() {
 }
 
 gen_temp_cert() {
-	local cn="$1"
-	local key_file="$2"
+	local key_file="$1"
+	local cn="$2"
+	local alt_names="${3:-}"
 
 	# We set validity to equal $renew_days_before because it's basically a
 	# maximum expected time it may take for the certificate to be issued.
@@ -212,7 +221,8 @@ gen_temp_cert() {
 	echo "# $TEMP_CERT_LABEL"
 	openssl req -key "$key_file" -new -x509 \
 		-subj "/CN=$cn/O=$TEMP_CERT_LABEL" \
-		-days "$renew_days_before"
+		-days "$renew_days_before" \
+		${alt_names:+-addext "$(format_subj_alt_name $cn $alt_names)"}
 }
 
 get_cert_status() {
@@ -315,7 +325,8 @@ fetch() {
 }
 
 req() {
-	local domain="$1"
+	local domain="$1"; shift
+	local alt_names="$*"
 	local key_file="${key_file:-"$keys_dir/$domain.key"}"
 	local cert_file="$certs_dir/$domain.crt"
 	local cert_req id payload resp
@@ -326,11 +337,11 @@ req() {
 
 	if [ "$create_temp_cert" = yes ] && ! [ -f "$cert_file" ]; then
 		mkdir -p "$certs_dir"
-		gen_temp_cert "$domain" "$key_file" > "$cert_file" \
+		gen_temp_cert "$key_file" "$domain" "$alt_names" > "$cert_file" \
 			|| die 4 'failed to generate temporary certificate'
 	fi
 
-	cert_req=$(gen_req "$domain" "$key_file") \
+	cert_req=$(gen_req "$key_file" "$domain" "$alt_names") \
 		|| die 4 'failed to generate certificate request'
 
 	payload=$(format_req_json "$cert_req")
