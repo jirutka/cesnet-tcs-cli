@@ -3,6 +3,7 @@
 # USAGE:
 #   cesnet-tcs [-V | -h]
 #   cesnet-tcs req [-C] [options] <domain> [<alt-name>...]
+#   cesnet-tcs req [-C] [options] -f <file>
 #   cesnet-tcs fetch [-C] [options] <id> <file-or-domain>
 #   cesnet-tcs list [-C]
 #
@@ -45,6 +46,13 @@
 #                          $certs_dir/<domain>.crt that can be used until the
 #                          requested certificate is issued.
 #
+#   -f --file FILE         Path of the file that contains list of domain names
+#                          for which to request certificates. One name per
+#                          line, optionally followed by a space separated alt
+#                          names. Empty lines and lines starting with "#" are
+#                          ignored. If FILE is hyphen (-), read from STDIN.
+#                          This option is applicable only for action req.
+#
 #   -k --key FILE          Path of the certificate key in PEM format. It will
 #                          be generated if doesn't exist. Default is
 #                          "$keys_dir/<domain>.key".
@@ -61,6 +69,11 @@
 #   --notification-mails --mails EMAILS
 #                          Space separated e-mail address(es) where to send
 #                          warnings and information about the certificate.
+#
+#   -m --only-missing      Request only missing certificates, i.e. when
+#                          certificate for the domain name doesn't exist or
+#                          doesn't have all the specified alternative names.
+#                          This option can be used only with --file.
 #
 #   --requester-phone --phone PHONE
 #                          Telephone number for verification of the requester
@@ -126,6 +139,7 @@ key_alg='rsa:3072'
 key_umask=277
 keys_dir='/etc/ssl/cesnet'
 notification_mails=
+only_missing=no
 renew_days_before=14
 requester_phone=
 silent=no
@@ -168,6 +182,13 @@ escape_newlines() {
 	printf '%s' "$1" | sed 's/$/\\n/' | tr -d '\n' | sed 's/\\n$//'
 }
 
+# Returns 0 if list $1 is a subset of list $2, otherwise returns 1.
+issubset() {
+	local i; for i in $1; do
+		printf '%s\n' $2 | grep -qFx "$i" || return 1
+	done
+}
+
 write_file() {
 	local dest_file="$1"
 	local content="$2"
@@ -180,6 +201,18 @@ write_file() {
 
 	mkdir -p "$(dirname "$dest_file")"
 	printf '%s\n' "$content" > "$dest_file"
+}
+
+decode_x509() {
+	# openssl is crappy, it returns 0 even on error, that's why grep...
+	openssl x509 -noout -text -in "$1" | grep -C 999 '^Certificate:' \
+		|| die 4 "failed to read $crtfile"
+}
+
+parse_alt_names() {
+	grep -A1 'X509v3 Subject Alternative Name:' \
+		| sed -En 's/\s*//g;s/DNS:([^, ]+),?/\1 /gp' \
+		| xargs printf '%s\n'
 }
 
 format_subj_alt_name() {
@@ -282,20 +315,10 @@ list() {
 	local altnames cn crtfile enddate x509
 
 	for crtfile in $(find "$certs_dir" -name '*.crt' | sort); do
-		# openssl is crappy, it returns 0 even on error, that's why grep...
-		x509=$(openssl x509 -noout -text -in "$crtfile" \
-			| grep -C 9999 '^Certificate:') \
-			|| die 4 "failed to read $crtfile"
-
-		cn=$(echo "$x509" \
-			| sed -En 's|^\s*Subject: .*CN\s*=\s*([^/ ]+).*|\1|p')
-		altnames=$(echo "$x509" \
-			| grep -A1 'X509v3 Subject Alternative Name:' \
-			| sed -En 's/\s*//g;s/DNS:([^, ]+),?/\1 /gp' \
-			| xargs printf '%s\n' \
-			| grep -xv "$cn" || :)
-		enddate=$(echo "$x509" \
-			| grep -A2 'Validity\b' \
+		x509=$(decode_x509 "$crtfile")
+		cn=$(echo "$x509" | sed -En 's|^\s*Subject: .*CN\s*=\s*([^/ ]+).*|\1|p')
+		altnames=$(echo "$x509" | parse_alt_names | grep -xv "$cn" || :)
+		enddate=$(echo "$x509" | grep -A2 'Validity\b' \
 			| sed -En 's/\s*Not After\s*: (.*) [A-Z]+$/\1/p')
 
 		printf '%s\t%s\n' "$(echo $cn $altnames)" "$(date -I -u -d "$enddate")"
@@ -395,10 +418,41 @@ req() {
 	esac
 }
 
+req_file() {
+	local filename="$1"
+	local cn crtfile domains
+
+	[ "$filename" = '-' ] && filename='/dev/stdin'
+
+	while read domains; do
+		cn="${domains%% *}"
+		crtfile="$certs_dir/$cn.crt"
+
+		case "$domains" in '#'* | '')
+			continue;;
+		esac
+		if [ "$only_missing" = yes ] && [ -f "$crtfile" ] \
+			&& issubset "$domains" "$cn $(decode_x509 "$crtfile" | parse_alt_names)"
+		then
+			[ "$verbose" = yes ] && echo "skipping $domains (exists)" >&2
+			continue
+		fi
+		if [ "$only_missing" = yes ] && grep -qrx "$cn" "$spool_dir" 2>/dev/null; then
+			[ "$verbose" = yes ] && echo "skipping $domains (pending)" >&2
+			continue
+		fi
+
+		[ "$silent" = yes ] || echo "requesting certificate for $domains" >&2
+		req $domains
+	done < "$filename"
+}
+
 
 #-----------------------------  M a i n  -----------------------------#
 
 _action=
+_domains_file=
+
 case "${1:-}" in
 	list | fetch | req) _action="$1"; shift;;
 	-V | --version) echo "$PROGNAME $VERSION"; exit 0;;
@@ -426,11 +480,13 @@ while [ $# -gt 0 ]; do
 		-c | --client-cert) client_cert="$val";;
 		-p | --client-key) client_key="$val";;
 		-t | --create-temp-cert) create_temp_cert=yes; n=1;;
+		-f | --file) _domains_file="$val";;
 		-k | --key) key_file="$val";;
 		-a | --key-alg) key_alg="$val";;
 		-B | --no-backup-old) backup_old=no; n=1;;
 		-I | --no-intermediate) interm_cert_include=no; n=1;;
 		     --notification-mails | --mails) notification_mails="$val";;
+		-m | --only-missing) only_missing=yes; n=1;;
 		     --requester-phone | --phone) requester_phone="$val";;
 		-s | --silent) silent=yes; n=1;;
 		     --subject-lang) subject_lang="$val";;
@@ -444,15 +500,23 @@ while [ $# -gt 0 ]; do
 done
 
 case "$_action" in
+	list)
+		list
+	;;
 	fetch)
 		[ $# -eq 2 ] || die 2 'invalid number of arguments, read --help!'
+		fetch "$@"
 	;;
 	req)
-		[ $# -gt 0 ] || die 2 'missing argument, read --help!'
 		[ "$client_cert" ] || die 2 'missing required option --client-cert!'
 		[ "$client_key" ] || die 2 'missing required option --client-key!'
 		[ "$requester_phone" ] || die 2 'missing required option --requester-phone!'
+
+		if [ "$_domains_file" ]; then
+			req_file "$_domains_file"
+		else
+			[ $# -gt 0 ] || die 2 'missing argument, read --help!'
+			req "$@"
+		fi
 	;;
 esac
-
-$_action "$@"
