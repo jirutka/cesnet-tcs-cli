@@ -1,6 +1,6 @@
 = CESNET TCS CLI
 :name: cesnet-tcs-cli
-:version: 0.2.0
+:version: 0.3.0
 :gh-name: jirutka/{name}
 
 This project provides CLI utility `cesnet-tcs` for requesting and fetching server certificates from https://tcs.cesnet.cz/en/[CESNET TCS] using https://pki.cesnet.cz/cs/tcs-api-documentation.html[TCS API].
