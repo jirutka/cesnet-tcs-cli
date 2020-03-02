@@ -58,7 +58,7 @@
 #                          "$keys_dir/<domain>.key".
 #
 #   -a --key-alg ALG       Algorithm to use for generating the certificate key.
-#                          Only RSA (e.g. "rsa:3072") and EC (e.g. "secp521r1")
+#                          Only RSA (e.g. "rsa:3072") and EC (e.g. "secp256k1")
 #                          are supported. Default is rsa:3072.
 #
 #   -B --no-backup-old     Do not backup existing certificate file (by renaming
