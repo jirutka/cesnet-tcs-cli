@@ -237,7 +237,7 @@ gen_key() {
 
 	case "$key_alg" in
 		rsa:*) openssl genrsa -out "$outfile" ${key_alg#*:};;
-		*) openssl ecparam -name "$key_alg" -genkey -param_enc explicit -out "$outfile";;
+		*) openssl ecparam -genkey -name "$key_alg" -noout -out "$outfile";;
 	esac
 
 	umask "$orig_umask"
