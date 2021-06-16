@@ -308,7 +308,7 @@ _curl() {
 		opts="$opts --silent --show-error"
 	fi
 
-	curl $opts "$@"
+	curl --fail $opts "$@"
 }
 
 list() {
