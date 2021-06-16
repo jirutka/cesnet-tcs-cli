@@ -58,8 +58,8 @@
 #                          "$keys_dir/<domain>.key".
 #
 #   -a --key-alg ALG       Algorithm to use for generating the certificate key.
-#                          Only RSA (e.g. "rsa:3072") and EC (e.g. "secp256k1")
-#                          are supported. Default is rsa:3072.
+#                          Only RSA (e.g. "rsa:3072") and EC (e.g. "prime256v1")
+#                          are supported. Default is "prime256v1".
 #
 #   -B --no-backup-old     Do not backup existing certificate file (by renaming
 #                          to <name>.bak), just overwrite it.
@@ -135,7 +135,7 @@ client_key=
 create_temp_cert=no
 interm_cert_include=yes
 interm_cert_url='https://pki.cesnet.cz/certs/TERENA_SSL_CA_3.pem'
-key_alg='rsa:3072'
+key_alg='prime256v1'
 key_umask=277
 keys_dir='/etc/ssl/cesnet'
 notification_mails=
