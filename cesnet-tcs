@@ -111,7 +111,7 @@
 set -eu
 
 readonly PROGNAME='cesnet-tcs'
-readonly VERSION='0.3.2'
+readonly VERSION='0.4.0'
 
 readonly TEMP_CERT_LABEL='Temporary certificate'
 
