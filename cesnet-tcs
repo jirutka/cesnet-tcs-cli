@@ -342,8 +342,9 @@ fetch() {
 		issued)
 			cert=$(set -eu
 				printf -- "$(json_get 'certificate' "$resp")"
-				[ "$interm_cert_include" = no ] || _curl "$interm_cert_url" \
-					|| die 3 'failed to fetch intermediate certificate'
+				[ "$interm_cert_include" = no ] || for url in $interm_cert_url; do
+					_curl "$url" || die 3 'failed to fetch intermediate certificate'
+				done
 			)
 			if [ "$outfile" = '-' ]; then
 				printf '%s\n' "$cert"
